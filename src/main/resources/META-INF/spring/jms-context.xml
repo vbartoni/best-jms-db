@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop" xmlns:jms="http://www.springframework.org/schema/jms"
+	xmlns:tx="http://www.springframework.org/schema/tx" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+		http://www.springframework.org/schema/jms http://www.springframework.org/schema/jms/spring-jms-3.1.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.1.xsd
+		http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.1.xsd">
+
+	<import resource="classpath:/META-INF/spring/data-source-context.xml" />
+
+	<aop:aspectj-autoproxy>
+		<aop:include name="failureSimulator"/>
+	</aop:aspectj-autoproxy>
+
+    <!--
+    Transcation manager used is JPA, but the JMS transactions are
+    actually handled by TransactionAwareConnectionFactoryProxy, when it's property
+    synchedLocalTransactionAllowed is set to to 'true'.
+
+    With this configuration we have implementation of pattern "best-jms-db"
+    from http://www.javaworld.com/article/2077963/open-source-tools/distributed-transactions-in-spring-with-and-without-xa.html?page=2
+    -->
+	<jms:listener-container transaction-manager="transactionManager" connection-factory="connectionFactory" receive-timeout="30000">
+		<!-- Use a different queue for the async samples than the sync ones -->
+		<jms:listener destination="async" ref="fooHandler" method="handle"/>
+	</jms:listener-container>
+
+	<!-- For test purposes only, a utility for simulating failures -->
+	<bean id="fooHandler" class="com.springsource.open.foo.FooHandler">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<!-- For test purposes only, we have a utility for simulating failures -->
+	<bean id="failureSimulator" class="com.springsource.open.foo.FailureSimulator">
+		<property name="jmsTemplate" ref="jmsTemplate" />
+	</bean>
+
+	<bean id="jmsTemplate" class="org.springframework.jms.core.JmsTemplate">
+		<property name="connectionFactory" ref="jmsCFP" />
+		<property name="receiveTimeout" value="100" />
+		<!-- This is important... -->
+		<property name="sessionTransacted" value="true" />
+	</bean>
+
+    <!--
+    Not using CachingConnectionFactory for DefaultMessageListenerContainer, as recommended in
+    documentation:
+    http://docs.spring.io/spring/docs/3.2.7.RELEASE/javadoc-api/org/springframework/jms/listener/DefaultMessageListenerContainer.html
+    and in discussion forum by Spring lead developer Gary Russell:
+    http://stackoverflow.com/a/21989895
+    -->
+
+	<bean id="connectionFactory"
+		class="org.springframework.jms.connection.TransactionAwareConnectionFactoryProxy">
+		<property name="targetConnectionFactory" ref = "springCF"/>
+		<property name="synchedLocalTransactionAllowed" value="true" />
+	</bean>
+
+	<bean id = "springCF" class="org.springframework.jms.connection.SingleConnectionFactory">
+		<property name="targetConnectionFactory" ref="jmsCF"/>
+	</bean>
+
+	<bean id= "jmsCF" class="org.apache.activemq.ActiveMQConnectionFactory"
+		  depends-on="brokerService">
+		<property name="brokerURL" value="vm://localhost"/>
+	</bean>
+
+	<bean id="jmsCFP" class="org.apache.activemq.pool.PooledConnectionFactory" destroy-method="stop">
+		<property name="connectionFactory">
+			<bean class="org.apache.activemq.ActiveMQConnectionFactory">
+				<property name="brokerURL">
+					<value>vm://localhost</value>
+				</property>
+			</bean>
+		</property>
+	</bean>
+
+	<bean id="brokerService" class="org.apache.activemq.broker.BrokerService"
+		init-method="start" destroy-method="stop">
+		<property name="brokerName" value="broker" />
+		<!-- Enable this if you need to inspect with JMX -->
+		<property name="useJmx" value="false" />
+		<property name="transportConnectorURIs">
+			<list>
+				<value>vm://localhost</value>
+			</list>
+		</property>
+		<property name="persistenceAdapter">
+			<!-- Use the cheapest possible persistence adapter for testing purposes -->
+			<bean class="org.apache.activemq.store.memory.MemoryPersistenceAdapter"/>
+		</property>
+	</bean>
+
+</beans>
