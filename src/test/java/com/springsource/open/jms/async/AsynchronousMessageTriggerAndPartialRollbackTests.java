@@ -25,7 +25,7 @@ import org.springframework.test.jdbc.SimpleJdbcTestUtils;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
-@ContextConfiguration(locations={"classpath*:META-INF/spring/jms-context.xml"})
+@ContextConfiguration(locations={"classpath*:META-INF/spring/jms-context-single-cf.xml"})
 @RunWith(SpringJUnit4ClassRunner.class)
 public class AsynchronousMessageTriggerAndPartialRollbackTests extends AbstractAsynchronousMessageTriggerTests {
 
@@ -38,10 +38,11 @@ public class AsynchronousMessageTriggerAndPartialRollbackTests extends AbstractA
 	@Override
 	protected void checkPostConditions() {
 
-		// Both committed
-		assertEquals(2, SimpleJdbcTestUtils.countRowsInTable(jdbcTemplate, "T_FOOS"));
+		// Check how many items are in DB
+		assertEquals(1, SimpleJdbcTestUtils.countRowsInTable(jdbcTemplate, "T_FOOS"));
+
+		// Check how many messages are in queue
 		List<String> list = getMessages();
-		// One message rolled back and returned to queue
 		assertEquals(1, list.size());
 
 	}
